@@ -1,31 +1,44 @@
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
-const fs = require('fs');
-const path = require('path');
+const { default: makeWASocket, useSingleFileAuthState } = require("@whiskeysockets/baileys");
+const { Boom } = require("@hapi/boom");
+const qrcode = require("qrcode-terminal");
+const fs = require("fs");
 
-async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth');
-  const sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: true,
-  });
+// إعداد ملف الجلسة
+const { state, saveState } = useSingleFileAuthState("./session.json");
 
-  sock.ev.on('creds.update', saveCreds);
+// إنشاء الاتصال
+async function startSock() {
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false, // تم إيقاف هذا الخيار
+        browser: ["Ubuntu", "Chrome", "22.04.4"]
+    });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    // حفظ الجلسة عند أي تغيير
+    sock.ev.on("creds.update", saveState);
 
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    // طباعة QR عند التحديث
+    sock.ev.on("connection.update", (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-    if (text.toLowerCase() === '!وقت') {
-      const time = new Date().toLocaleString('ar-YE', { timeZone: 'Asia/Riyadh' });
-      await sock.sendMessage(msg.key.remoteJid, { text: `🕒 الوقت الآن: ${time}` });
-    }
+        if (qr) {
+            console.log("📲 امسح كود QR التالي بسرعة لتسجيل الدخول:");
+            qrcode.generate(qr, { small: true });
+        }
 
-    if (text.toLowerCase().includes('من أنا')) {
-      await sock.sendMessage(msg.key.remoteJid, { text: `👤 أنت: ${msg.pushName || 'مستخدم مجهول'}` });
-    }
-  });
+        if (connection === "close") {
+            const shouldReconnect = (lastDisconnect.error = Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log("تم فصل الاتصال، إعادة التشغيل:", shouldReconnect);
+            if (shouldReconnect) startSock();
+        } else if (connection === "open") {
+            console.log("✅ تم الاتصال بواتساب بنجاح!");
+        }
+    });
+
+    // رسائل جديدة
+    sock.ev.on("messages.upsert", async (m) => {
+        console.log("📥 رسالة جديدة", m);
+    });
 }
 
-startBot();
+startSock();
