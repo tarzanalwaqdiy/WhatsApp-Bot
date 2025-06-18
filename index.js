@@ -4,8 +4,8 @@ const qrcode = require("qrcode-terminal");
 const fs = require("fs");
 
 // إعداد ملف الجلسة
-const { state, saveState } = useSingleFileAuthState("./session.json");
-
+const { useSingleFileAuthState } = require('@whiskeysockets/baileys');
+const { state, saveState } = useSingleFileAuthState('./session.json');
 // إنشاء الاتصال
 async function startSock() {
     const sock = makeWASocket({
